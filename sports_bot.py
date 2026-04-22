@@ -18,8 +18,6 @@ if API_KEY is None or API_SECRET is None:
 api = REST(API_KEY, API_SECRET, BASE_URL)
 
 
-# Algorithm
-
 class BSTNode:
     def __init__(self, score, symbol):
         self.score = score
@@ -46,7 +44,9 @@ def find_max(root):
         root = root.right
     return root.symbol
 
-
+# -------------------------------------------------
+# Trading System
+# -------------------------------------------------
 
 MAX_SHARES = 100
 COOLDOWN_LIMIT = 3
@@ -68,6 +68,7 @@ def std_dev(values):
     return variance ** 0.5
 
 
+
 def load_initial_history(watchlist, price_history):
     print("\n--- Loading initial historical data (1-hour bars) ---")
     for stock in watchlist:
@@ -75,7 +76,7 @@ def load_initial_history(watchlist, price_history):
             bars = api.get_bars(
                 stock,
                 TimeFrame.Hour,
-                limit=50,      # 50 hours = plenty
+                limit=50,
                 adjustment='raw'
             )
 
@@ -117,7 +118,7 @@ def run_trading_bot(watchlist, price_history, portfolio, cooldown):
         if len(prices) < 5:
             continue
 
-        shortMA = sum(prices[-3:]) / 3     # shorter MA for small data
+        shortMA = sum(prices[-3:]) / 3
         longMA = sum(prices[-5:]) / 5
         volatility = std_dev(prices)
 
@@ -155,15 +156,15 @@ def run_trading_bot(watchlist, price_history, portfolio, cooldown):
 
     trade_made = False
 
-    # Buy rule
-    if portfolio[best_stock] == 0 and scores[best_stock] > 0 and cooldown[best_stock] >= COOLDOWN_LIMIT:
+   
+    if portfolio[best_stock] == 0 and scores[best_stock] > -1 and cooldown[best_stock] >= COOLDOWN_LIMIT:
         portfolio[best_stock] = MAX_SHARES
         cooldown[best_stock] = 0
         print("BUY:", best_stock)
         trade_made = True
 
     # Sell rule
-    if portfolio[worst_stock] > 0 and scores[worst_stock] < 0 and cooldown[worst_stock] >= COOLDOWN_LIMIT:
+    if portfolio[worst_stock] > 0 and scores[worst_stock] < -1 and cooldown[worst_stock] >= COOLDOWN_LIMIT:
         portfolio[worst_stock] = 0
         cooldown[worst_stock] = 0
         print("SELL:", worst_stock)
@@ -193,7 +194,6 @@ portfolio = {s: 0 for s in watchlist}
 cooldown = {s: 999 for s in watchlist}
 
 
-# Run Bot
 
 load_initial_history(watchlist, price_history)
 run_trading_bot(watchlist, price_history, portfolio, cooldown)
