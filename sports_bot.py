@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from alpaca_trade_api.rest import REST, TimeFrame
+from alpaca_trade_api.rest import REST, TimeFrame, APIError
 
 load_dotenv("/Users/s1961590/Downloads/25-26 Compsci/SportsBot/.env")
 
@@ -16,6 +16,7 @@ if API_KEY is None or API_SECRET is None:
     exit()
 
 api = REST(API_KEY, API_SECRET, BASE_URL)
+
 
 
 class BSTNode:
@@ -44,9 +45,6 @@ def find_max(root):
         root = root.right
     return root.symbol
 
-# -------------------------------------------------
-# Trading System
-# -------------------------------------------------
 
 MAX_SHARES = 100
 COOLDOWN_LIMIT = 3
@@ -66,6 +64,50 @@ def std_dev(values):
     avg = sum(values) / len(values)
     variance = sum((v - avg)**2 for v in values) / len(values)
     return variance ** 0.5
+
+
+def get_position_qty(symbol):
+    try:
+        pos = api.get_position(symbol)
+        return float(pos.qty)
+    except APIError as e:
+        if "position does not exist" in str(e).lower():
+            return 0.0
+        print(f"Error getting position for {symbol}: {e}")
+        return 0.0
+    except Exception as e:
+        print(f"Unexpected error getting position for {symbol}: {e}")
+        return 0.0
+
+def place_buy_order(symbol, qty):
+    try:
+        print(f"PLACING BUY ORDER: {symbol} x {qty}")
+        api.submit_order(
+            symbol=symbol,
+            qty=qty,
+            side="buy",
+            type="market",
+            time_in_force="day"
+        )
+    except Exception as e:
+        print(f"Error placing BUY for {symbol}: {e}")
+
+def place_sell_order(symbol):
+    qty = get_position_qty(symbol)
+    if qty <= 0:
+        print(f"No position to sell for {symbol}")
+        return
+    try:
+        print(f"PLACING SELL ORDER: {symbol} x {qty}")
+        api.submit_order(
+            symbol=symbol,
+            qty=qty,
+            side="sell",
+            type="market",
+            time_in_force="day"
+        )
+    except Exception as e:
+        print(f"Error placing SELL for {symbol}: {e}")
 
 
 
@@ -91,7 +133,6 @@ def load_initial_history(watchlist, price_history):
 
         except Exception as e:
             print(f"Error loading history for {stock}: {e}")
-
 
 
 def run_trading_bot(watchlist, price_history, portfolio, cooldown):
@@ -156,18 +197,25 @@ def run_trading_bot(watchlist, price_history, portfolio, cooldown):
 
     trade_made = False
 
-   
+    # Sync portfolio dict with real Alpaca positions
+    for stock in watchlist:
+        portfolio[stock] = get_position_qty(stock)
+
+    # ---------------- BUY RULE (with real order) ----------------
+    # Threshold tuned for 5-bar data
     if portfolio[best_stock] == 0 and scores[best_stock] > -1 and cooldown[best_stock] >= COOLDOWN_LIMIT:
+        print("SIGNAL: BUY", best_stock)
+        place_buy_order(best_stock, MAX_SHARES)
         portfolio[best_stock] = MAX_SHARES
         cooldown[best_stock] = 0
-        print("BUY:", best_stock)
         trade_made = True
 
-    # Sell rule
+    # ---------------- SELL RULE (with real order) ---------------
     if portfolio[worst_stock] > 0 and scores[worst_stock] < -1 and cooldown[worst_stock] >= COOLDOWN_LIMIT:
+        print("SIGNAL: SELL", worst_stock)
+        place_sell_order(worst_stock)
         portfolio[worst_stock] = 0
         cooldown[worst_stock] = 0
-        print("SELL:", worst_stock)
         trade_made = True
 
     if not trade_made:
@@ -179,8 +227,7 @@ def run_trading_bot(watchlist, price_history, portfolio, cooldown):
 
     print("Run complete.")
     print("Scores:", scores)
-    print("Portfolio:", portfolio)
-
+    print("Portfolio (sim):", portfolio)
 
 
 watchlist = [
@@ -189,10 +236,10 @@ watchlist = [
 ]
 
 
+
 price_history = {s: [] for s in watchlist}
 portfolio = {s: 0 for s in watchlist}
 cooldown = {s: 999 for s in watchlist}
-
 
 
 load_initial_history(watchlist, price_history)
